@@ -15,7 +15,7 @@ EditorBuildSettings:
     path: Assets/PassthroughCameraApiSamples/MultiObjectDetection/MultiObjectDetection.unity
     guid: 20c230cce46443841b5727b1d6100bfc
   - enabled: 1
-    path: Assets/Anaglyph/XRTemplate/Depth/stripes_files/RayMarchingScene.unity
+    path: Assets/Anaglyph/XRTemplate/Depth/myfiles/RayMarchingScene 1.unity
     guid: c5776edd6a4b619439ed858c5bfd04d3
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 4c41dd6ad791e2a4b8898d0ea8b277ec, type: 2}
