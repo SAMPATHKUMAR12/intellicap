@@ -17,23 +17,21 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         [Header("Controls configuration")]
         [SerializeField] private OVRInput.RawButton m_actionButton = OVRInput.RawButton.A;
 
-        [Header("Ui references")]
+        [Header("UI references")]
         [SerializeField] private DetectionUiMenuManager m_uiMenuManager;
 
-        [Header("Placement configureation")]
-        [SerializeField] private GameObject m_spwanMarker; // kept only for inspector compatibility, no longer used
-        [SerializeField] private EnvironmentRayCastSampleManager m_environmentRaycast;
+        [Header("Placement configuration")]
         [SerializeField] private float m_spawnDistance = 0.25f;
         [SerializeField] private AudioSource m_placeSound;
 
-        [Header("Sentis inference ref")]
+        [Header("Sentis inference refs")]
         [SerializeField] private SentisInferenceRunManager m_runInference;
         [SerializeField] private SentisInferenceUiManager m_uiInference;
         [Space(10)]
         public UnityEvent<int> OnObjectsIdentified;
 
         private bool m_isPaused = true;
-        private readonly List<GameObject> m_spwanedEntities = new();
+        private readonly List<GameObject> m_spawnedEntities = new();
         private bool m_isStarted = false;
         private bool m_isSentisReady = false;
         private float m_delayPauseBackTime = 0f;
@@ -70,13 +68,13 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         private void Awake()
         {
             if (OVRManager.display != null)
-                OVRManager.display.RecenteredPose += CleanMarkersCallBack;
+                OVRManager.display.RecenteredPose += CleanSpawnedObjectsCallback;
         }
 
         private void OnDestroy()
         {
             if (OVRManager.display != null)
-                OVRManager.display.RecenteredPose -= CleanMarkersCallBack;
+                OVRManager.display.RecenteredPose -= CleanSpawnedObjectsCallback;
         }
 
         private IEnumerator Start()
@@ -92,9 +90,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             }
 
             while (!sentisInference.IsModelLoaded)
-            {
                 yield return null;
-            }
 
             m_isSentisReady = true;
             m_isPaused = false;
@@ -118,7 +114,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                     m_autoSpawnTimer -= Time.deltaTime;
                     if (m_autoSpawnTimer <= 0f)
                     {
-                        SpwanCurrentDetectedObjects();
+                        SpawnCurrentDetectedObjects();
                         m_autoSpawnTimer = m_autoSpawnInterval;
                     }
                 }
@@ -137,14 +133,12 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             }
 
             if (m_runInference != null && !m_runInference.IsRunning())
-            {
                 m_runInference.RunInference(m_cameraAccess);
-            }
         }
 
         #endregion
 
-        #region Marker / Sphere Helpers
+        #region Sphere Helpers
 
         private static void MidpointEnclosingSphere(Vector3 c1, float r1, Vector3 c2, float r2, out Vector3 c, out float r)
         {
@@ -245,7 +239,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                         out mergedRadius);
 
                     m_spawnedSpheres.RemoveAt(i);
-                    m_spwanedEntities.Remove(s);
+                    m_spawnedEntities.Remove(s);
                     Destroy(s);
                 }
             }
@@ -268,15 +262,13 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
             var go = Instantiate(m_spherePrefab);
             go.transform.SetPositionAndRotation(pos, Quaternion.identity);
-
-            // Keeping your existing scale convention
             go.transform.localScale = Vector3.one * radius;
 
             var info = go.GetComponent<CoverageSphereInfo>() ?? go.AddComponent<CoverageSphereInfo>();
             info.Radius = radius;
 
             m_spawnedSpheres.Add(go);
-            m_spwanedEntities.Add(go);
+            m_spawnedEntities.Add(go);
 
             return go;
         }
@@ -285,27 +277,20 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
         #region Detection Placement
 
-        /// <summary>
-        /// Clean spawned entities when tracking space is re-centered.
-        /// </summary>
-        private void CleanMarkersCallBack()
+        private void CleanSpawnedObjectsCallback()
         {
-            foreach (var e in m_spwanedEntities)
+            foreach (var e in m_spawnedEntities)
             {
                 if (e != null)
                     Destroy(e, 0.1f);
             }
 
-            m_spwanedEntities.Clear();
+            m_spawnedEntities.Clear();
             m_spawnedSpheres.Clear();
             OnObjectsIdentified?.Invoke(-1);
         }
 
-        /// <summary>
-        /// Spawn coverage spheres for current detected objects.
-        /// Marker and label spawning have been removed.
-        /// </summary>
-        private void SpwanCurrentDetectedObjects()
+        private void SpawnCurrentDetectedObjects()
         {
             if (m_uiInference == null || m_uiInference.BoxDrawn == null)
                 return;
@@ -313,7 +298,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             int count = 0;
             foreach (var box in m_uiInference.BoxDrawn)
             {
-                if (PlaceMarkerUsingEnvironmentRaycast(box))
+                if (PlaceDetectionSphere(box))
                     count++;
             }
 
@@ -323,11 +308,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             OnObjectsIdentified?.Invoke(count);
         }
 
-        /// <summary>
-        /// Place only a sphere using detected object world position.
-        /// Marker and label spawning are disabled.
-        /// </summary>
-        private bool PlaceMarkerUsingEnvironmentRaycast(SentisInferenceUiManager.BoundingBox box)
+        private bool PlaceDetectionSphere(SentisInferenceUiManager.BoundingBox box)
         {
             if (!box.WorldPos.HasValue)
                 return false;
@@ -348,7 +329,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
             string className = box.ClassName;
 
-            foreach (var e in m_spwanedEntities)
+            foreach (var e in m_spawnedEntities)
             {
                 if (!e) continue;
 
@@ -364,17 +345,13 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 Debug.Log($"[Spawn] class={className} score={score:F1} spawnSphere={spawnSphere}");
             }
 
-            // Marker and label are removed completely.
-            // Only spawn sphere when threshold condition is satisfied.
             if (!spawnSphere || m_spherePrefab == null)
                 return false;
 
             float radius = m_defaultSphereRadius;
 
             if (cam != null && m_uiInference != null)
-            {
                 radius = EstimateSphereRadiusFromUiBBox(cam, m_uiInference, box, position);
-            }
 
             if (m_mergeOverlaps)
                 SpawnOrMergeSphere(position, radius);
@@ -388,9 +365,6 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
         #region Public Functions
 
-        /// <summary>
-        /// Pause the detection logic when the pause menu is active.
-        /// </summary>
         public void OnPause(bool pause)
         {
             m_isPaused = pause;
