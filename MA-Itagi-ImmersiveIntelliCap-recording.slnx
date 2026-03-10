@@ -1,0 +1,10 @@
+﻿<Solution>
+  <Project Path="Anaglyph.DepthKit.csproj" />
+  <Project Path="AprilTag.Runtime.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="Anaglyph.XRTemplate.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="Anaglyph.GPU.csproj" />
+  <Project Path="Anaglyph.Input.csproj" />
+  <Project Path="Anaglyph.csproj" />
+</Solution>

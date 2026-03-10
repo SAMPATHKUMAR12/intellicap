@@ -1,0 +1,86 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3277473239558294698
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 499923058777220218}
+  - component: {fileID: 9195469641548943470}
+  - component: {fileID: 5887732148699501001}
+  - component: {fileID: 5625952889133344084}
+  m_Layer: 0
+  m_Name: InfiniteStripeSystem
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &499923058777220218
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3277473239558294698}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 1.5}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &9195469641548943470
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3277473239558294698}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fbca73d9901c3b340a87a58fe341381c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  stripeMaterial: {fileID: 2100000, guid: 4f7079a69bf3b1e468e90fd87dd487a2, type: 2}
+  width: 1024
+  height: 1024
+--- !u!114 &5887732148699501001
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3277473239558294698}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 797dc4e7803a0dc42ac043c848a2333b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maskCompute: {fileID: 7200000, guid: db7383a06fc131744b47a92ae5b1a9fa, type: 3}
+  mapper: {fileID: 0}
+  xrCamera: {fileID: 0}
+  maskWidth: 256
+  maskHeight: 256
+  maxDistance: 7
+  updatesPerSecond: 2
+  coverageThreshold: 0.25
+--- !u!114 &5625952889133344084
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3277473239558294698}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b9fcb5ee04cf4a24699533bd7af372d9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  stripeRenderer: {fileID: 9195469641548943470}
+  maskRenderer: {fileID: 5887732148699501001}
+  stereoCompositeMat: {fileID: 2100000, guid: 488bd1124a8110344979e465a22b1792, type: 2}

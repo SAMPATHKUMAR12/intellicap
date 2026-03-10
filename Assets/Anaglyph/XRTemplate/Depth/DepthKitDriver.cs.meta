@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 4da2cc6f08414be49a8dd29eafdfeaa2
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - envDepthTextureProvider: {instanceID: 0}
+  - trackingSpace: {instanceID: 0}
+  - depthNormalCompute: {fileID: 7200000, guid: 094ecfc2d2e1d984c9955562fea46b9d, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

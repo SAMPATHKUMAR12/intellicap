@@ -1,0 +1,60 @@
+{
+  "dependencies": {
+    "com.adamgryu.inspectorhistory": "https://github.com/adamgryu/InspectorHistory-Unity.git",
+    "com.meta.xr.depthapi": "https://github.com/oculus-samples/Unity-DepthAPI.git?path=/Packages/com.meta.xr.depthapi",
+    "com.meta.xr.depthapi.urp": "https://github.com/oculus-samples/Unity-DepthAPI.git?path=/Packages/com.meta.xr.depthapi.urp",
+    "com.meta.xr.mrutilitykit": "81.0.0",
+    "com.meta.xr.sdk.core": "81.0.0",
+    "com.meta.xr.sdk.haptics": "81.0.0",
+    "com.meta.xr.sdk.movement": "https://github.com/oculus-samples/Unity-Movement.git",
+    "com.meta.xr.simulator": "81.0.0",
+    "com.strikervr.strikersdk": "0.9.0",
+    "com.unity.2d.sprite": "1.0.0",
+    "com.unity.ai.inference": "2.2.1",
+    "com.unity.collections": "2.6.3",
+    "com.unity.feature.development": "1.0.2",
+    "com.unity.ide.visualstudio": "2.0.25",
+    "com.unity.inputsystem": "1.14.2",
+    "com.unity.mobile.android-logcat": "1.4.6",
+    "com.unity.multiplayer.playmode": "1.6.1",
+    "com.unity.netcode.gameobjects": "2.7.0",
+    "com.unity.nuget.mono-cecil": "1.11.6",
+    "com.unity.probuilder": "6.0.8",
+    "com.unity.project-auditor": "1.0.2",
+    "com.unity.render-pipelines.universal": "17.2.0",
+    "com.unity.services.multiplayer": "1.1.8",
+    "com.unity.shadergraph": "17.2.0",
+    "com.unity.textmeshpro": "3.0.9",
+    "com.unity.transport": "2.6.0",
+    "com.unity.ugui": "2.0.0",
+    "com.unity.visualeffectgraph": "17.2.0",
+    "com.unity.xr.interaction.toolkit": "3.2.1",
+    "com.unity.xr.oculus": "4.5.2",
+    "com.unity.modules.ai": "1.0.0",
+    "com.unity.modules.androidjni": "1.0.0",
+    "com.unity.modules.animation": "1.0.0",
+    "com.unity.modules.assetbundle": "1.0.0",
+    "com.unity.modules.audio": "1.0.0",
+    "com.unity.modules.imageconversion": "1.0.0",
+    "com.unity.modules.jsonserialize": "1.0.0",
+    "com.unity.modules.particlesystem": "1.0.0",
+    "com.unity.modules.physics": "1.0.0",
+    "com.unity.modules.physics2d": "1.0.0",
+    "com.unity.modules.ui": "1.0.0",
+    "com.unity.modules.uielements": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.vr": "1.0.0",
+    "com.unity.modules.xr": "1.0.0"
+  },
+  "scopedRegistries": [
+    {
+      "name": "package.openupm.com",
+      "url": "https://package.openupm.com",
+      "scopes": [
+        "com.strikervr.strikersdk",
+        "com.malee.reorderablelist"
+      ],
+      "overrideBuiltIns": false
+    }
+  ]
+}

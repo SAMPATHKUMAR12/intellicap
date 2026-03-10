@@ -1,0 +1,275 @@
+#include "../Depth/DepthKit.hlsl"
+
+uniform uint3 volumeSize;
+uniform float metersPerVoxel;
+
+// TSDF + coverage stored in RGBAHalf / R16G16B16A16_SFLOAT textures.
+// Use .r channel only.
+RWTexture3D<float4> volume;
+RWTexture3D<float4> coverageVolume;
+Texture3D<float4> raymarchVolume;
+
+StructuredBuffer<float3> frustumVolume;
+uint numFrustumSamples;
+
+SamplerState linearClampSampler;
+
+int numPlayers;
+float3 playerHeadsWorld[512];
+
+#define PLAYER_TOP 0.2
+#define PLAYER_BOTTOM 1.7
+#define PLAYER_RADIUS 0.5
+#define MIN_DOT 0.3
+
+float coverageIncrement;
+float coverageThreshold;          // kept for consistency, not used directly here
+float coverageSurfaceBandVoxels;  // kept for consistency, not used directly here
+int coverageBrushRadius;          // kept for consistency, not used directly here
+float3 volumeCenterWS;
+
+// ------------------------------------------------------------
+// Volume coordinate helpers
+// ------------------------------------------------------------
+
+float3 voxelToWorld(uint3 indices)
+{
+    float3 pos = (float3)indices;
+    pos += 0.5f;
+    pos -= (float3)volumeSize * 0.5f;
+    pos *= metersPerVoxel;
+    pos += volumeCenterWS;
+    return pos;
+}
+
+uint3 worldToVoxel(float3 pos)
+{
+    pos -= volumeCenterWS;
+    pos /= metersPerVoxel;
+    pos += (float3)volumeSize * 0.5f;
+
+    int3 ipos = int3(floor(pos));
+    ipos = clamp(ipos, int3(0, 0, 0), int3(volumeSize) - 1);
+    return uint3(ipos);
+}
+
+float3 worldToVoxelUVWUnclamped(float3 pos)
+{
+    pos -= volumeCenterWS;
+    pos /= metersPerVoxel;
+    pos += (float3)volumeSize * 0.5f;
+    pos -= 0.5f;
+    pos /= (float3)volumeSize;
+    return pos;
+}
+
+bool isUVWInside(float3 uvw)
+{
+    return uvw.x >= 0.0f && uvw.x <= 1.0f &&
+           uvw.y >= 0.0f && uvw.y <= 1.0f &&
+           uvw.z >= 0.0f && uvw.z <= 1.0f;
+}
+
+bool isInsideVolumeInt(int3 p)
+{
+    return
+        p.x >= 0 && p.x < volumeSize.x &&
+        p.y >= 0 && p.y < volumeSize.y &&
+        p.z >= 0 && p.z < volumeSize.z;
+}
+
+// ------------------------------------------------------------
+// Clear
+// ------------------------------------------------------------
+
+#pragma kernel Clear
+
+[numthreads(4, 4, 4)]
+void Clear(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= volumeSize.x || id.y >= volumeSize.y || id.z >= volumeSize.z)
+        return;
+
+    volume[id] = float4(1, 0, 0, 0);
+    coverageVolume[id] = float4(0, 0, 0, 0);
+}
+
+// ------------------------------------------------------------
+// Integrate
+// ------------------------------------------------------------
+
+#pragma kernel Integrate
+
+[numthreads(64, 1, 1)]
+void Integrate(uint i : SV_DispatchThreadID)
+{
+    if (i >= numFrustumSamples)
+        return;
+
+    float3 vLocalPos = frustumVolume[i];
+    float3 vWorldPos = mul(agDepthViewInv[0], float4(vLocalPos, 1.0)).xyz;
+    uint3 id = worldToVoxel(vWorldPos);
+
+    float3 eyePos = agDepthEyePos();
+    float3 voxPos = voxelToWorld(id);
+
+    float4 voxHCS = agDepthWorldToHCS(voxPos);
+    float3 voxNDC = agDepthHCStoNDC(voxHCS);
+
+    if (voxNDC.x < -1.0 || voxNDC.x > 1.0 || voxNDC.y < -1.0 || voxNDC.y > 1.0)
+        return;
+
+    float depth = agDepthSample(voxNDC.xy);
+
+    if (depth <= 0.0 || depth >= 1.0)
+        return;
+
+    float3 depthNDC = float3(voxNDC.xy, depth);
+    float3 depthPos = agDepthNDCtoWorld(depthNDC);
+
+    float voxEyeDist   = distance(voxPos, eyePos);
+    float depthEyeDist = distance(depthPos, eyePos);
+
+    float3 eyeToVox = voxPos - eyePos;
+    float3 depthNorm = agDepthNormalSample(voxNDC.xy);
+
+    float sDist = depthEyeDist - voxEyeDist;
+    float normDot = -dot(normalize(eyeToVox), depthNorm);
+    sDist *= saturate(normDot);
+
+    float sDistNorm = sDist / metersPerVoxel;
+    sDistNorm = min(sDistNorm, 1.0);
+
+    bool inPlayer = false;
+
+    [loop]
+    for (int p = 0; p < numPlayers; p++)
+    {
+        float3 playerPos = playerHeadsWorld[p];
+
+        if (distance(vWorldPos.xz, playerPos.xz) < PLAYER_RADIUS &&
+            vWorldPos.y < playerPos.y + PLAYER_TOP &&
+            vWorldPos.y > playerPos.y - PLAYER_BOTTOM)
+        {
+            inPlayer = true;
+            break;
+        }
+    }
+
+    if (abs(sDistNorm) <= coverageSurfaceBandVoxels)
+    {
+        int3 cid = int3(id);
+
+        [loop]
+        for (int dz = -coverageBrushRadius; dz <= coverageBrushRadius; dz++)
+        {
+            [loop]
+            for (int dy = -coverageBrushRadius; dy <= coverageBrushRadius; dy++)
+            {
+                [loop]
+                for (int dx = -coverageBrushRadius; dx <= coverageBrushRadius; dx++)
+                {
+                    int3 nid = cid + int3(dx, dy, dz);
+                    if (!isInsideVolumeInt(nid))
+                        continue;
+
+                    uint3 uid = uint3(nid);
+
+                    float oldCov = coverageVolume[uid].r;
+                    float newCov = saturate(oldCov + coverageIncrement);
+                    coverageVolume[uid] = float4(max(oldCov, newCov), 0, 0, 0);
+                }
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------
+// Generic raymarch support
+// ------------------------------------------------------------
+
+struct RaymarchRequest
+{
+    float4 origin;
+    float3 direction;
+    float maxDistance;
+};
+
+uint numRaymarchRequests;
+StructuredBuffer<RaymarchRequest> raymarchRequests;
+RWStructuredBuffer<float> raymarchResults;
+
+half raymarchSample(float3 worldPos)
+{
+    float3 uvw = worldToVoxelUVWUnclamped(worldPos);
+
+    if (!isUVWInside(uvw))
+        return 1.0h;
+
+    return raymarchVolume.SampleLevel(linearClampSampler, uvw, 0).r * metersPerVoxel;
+}
+
+#pragma kernel Raymarch
+
+[numthreads(64, 1, 1)]
+void Raymarch(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numRaymarchRequests)
+        return;
+
+    const float3 origin = raymarchRequests[id.x].origin.xyz;
+    const float3 direction = normalize(raymarchRequests[id.x].direction);
+    const float maxDist = raymarchRequests[id.x].maxDistance;
+
+    const uint maxSteps = max(1u, (uint)(maxDist / metersPerVoxel));
+
+    float dist = 0.0;
+    float resultDist = -1.0;
+    float3 normal = float3(0.0, 0.0, 0.0);
+    float confidence = 0.0;
+
+    uint steps = 0;
+
+    [loop]
+    for (uint i = 0; i < maxSteps; i++)
+    {
+        float3 pos = origin + direction * dist;
+        float val = raymarchSample(pos);
+
+        if (abs(val) < 0.01)
+        {
+            resultDist = dist;
+
+            float3 hitPos = origin + direction * resultDist;
+            float eps = metersPerVoxel;
+
+            float sx1 = raymarchSample(hitPos + float3(eps, 0, 0));
+            float sx2 = raymarchSample(hitPos - float3(eps, 0, 0));
+            float sy1 = raymarchSample(hitPos + float3(0, eps, 0));
+            float sy2 = raymarchSample(hitPos - float3(0, eps, 0));
+            float sz1 = raymarchSample(hitPos + float3(0, 0, eps));
+            float sz2 = raymarchSample(hitPos - float3(0, 0, eps));
+
+            float3 grad = float3(sx1 - sx2, sy1 - sy2, sz1 - sz2);
+            normal = normalize(grad);
+
+            confidence = 1.0 - ((float)steps / (float)maxSteps);
+            confidence = saturate(confidence);
+            break;
+        }
+
+        float stepSize = max(abs(val), metersPerVoxel * 0.5);
+        dist += stepSize;
+        steps++;
+
+        if (dist > maxDist)
+            break;
+    }
+
+    uint baseIndex = id.x * 5;
+    raymarchResults[baseIndex + 0] = resultDist;
+    raymarchResults[baseIndex + 1] = normal.x;
+    raymarchResults[baseIndex + 2] = normal.y;
+    raymarchResults[baseIndex + 3] = normal.z;
+    raymarchResults[baseIndex + 4] = confidence;
+}

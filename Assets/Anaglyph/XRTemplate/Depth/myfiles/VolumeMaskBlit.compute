@@ -1,0 +1,85 @@
+#pragma kernel RenderMask
+
+Texture3D<float4> coverageVolume;
+RWTexture2D<float> maskOut;
+
+SamplerState linearClampSampler;
+
+int maskWidth;
+int maskHeight;
+
+float metersPerVoxel;
+float3 volumeSize;
+float maxDistance;
+
+float4x4 eyeViewInv;
+float4x4 eyeProjInv;
+
+float3 volumeCenterWS;
+float coverageThreshold;
+
+float3 WorldToVolumeUVW(float3 pos)
+{
+    pos -= volumeCenterWS;
+    pos /= metersPerVoxel;
+    pos += volumeSize * 0.5;
+    pos -= 0.5;
+    pos /= volumeSize;
+    return pos;
+}
+
+bool IsUVWInside(float3 uvw)
+{
+    return uvw.x >= 0.0 && uvw.x <= 1.0 &&
+           uvw.y >= 0.0 && uvw.y <= 1.0 &&
+           uvw.z >= 0.0 && uvw.z <= 1.0;
+}
+
+float SampleCoverage(float3 worldPos)
+{
+    float3 uvw = WorldToVolumeUVW(worldPos);
+    if (!IsUVWInside(uvw))
+        return 0.0;
+
+    return coverageVolume.SampleLevel(linearClampSampler, uvw, 0).r;
+}
+
+[numthreads(8,8,1)]
+void RenderMask(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)maskWidth || id.y >= (uint)maskHeight)
+        return;
+
+    float2 uv = (float2(id.xy) + 0.5) / float2(maskWidth, maskHeight);
+    float2 ndc = uv * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+
+    float4 viewPos = mul(eyeProjInv, float4(ndc, 1.0, 1.0));
+    viewPos /= max(viewPos.w, 1e-6);
+
+    float3 dirVS = normalize(viewPos.xyz);
+    float3 originWS = mul(eyeViewInv, float4(0,0,0,1)).xyz;
+    float3 dirWS = normalize(mul((float3x3)eyeViewInv, dirVS));
+
+    float dist = 0.0;
+    float hit = 0.0;
+
+    for (int i = 0; i < 256; i++)
+    {
+        if (dist > maxDistance)
+            break;
+
+        float3 posWS = originWS + dirWS * dist;
+        float cov = SampleCoverage(posWS);
+
+        if (cov > coverageThreshold)
+        {
+            hit = 1.0;
+            break;
+        }
+
+        dist += metersPerVoxel * 0.75;
+    }
+
+    maskOut[int2(id.xy)] = hit;
+}
