@@ -2308,7 +2308,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxRayDistance: 10
-  hitRadiusMeters: 0.02
+  hitRadiusMeters: 0.06
   facingDotThreshold: 0.5
-  maxFacesHidePerFrame: 1
-  startDelaySeconds: 0.8
+  maxFacesHidePerFrame: 10
+  startDelaySeconds: 0.5
