@@ -20,6 +20,8 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         [Header("Multi-ray world position sampling")]
         [SerializeField] private bool m_useMultiRaySampling = true;
         [SerializeField] private float m_innerSampleFactor = 0.25f;
+        [SerializeField] private float m_outlierRejectMeters = 0.12f;
+        [SerializeField] private float m_outlierRejectRelative = 0.15f;
 
         [Header("UI display references")]
         [SerializeField] private SentisObjectDetectedUiManager m_detectionCanvas;
@@ -159,7 +161,12 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 string className = GetClassName(labelIDs[n]);
 
                 Vector3? worldPos = m_useMultiRaySampling
-                    ? SampleWorldPosFromBBox9(normalizedCenterX, normalizedCenterY, normalizedWidth, normalizedHeight, cameraPose)
+                    ? SampleWorldPosFromBBox9_OutlierRejected(
+                        normalizedCenterX,
+                        normalizedCenterY,
+                        normalizedWidth,
+                        normalizedHeight,
+                        cameraPose)
                     : SampleSingleCenterWorldPos(normalizedCenterX, normalizedCenterY, cameraPose);
 
                 var box = new BoundingBox
@@ -191,7 +198,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             return m_environmentRaycast.Raycast(ray);
         }
 
-        private Vector3? SampleWorldPosFromBBox9(
+        private Vector3? SampleWorldPosFromBBox9_OutlierRejected(
             float normalizedCenterX,
             float normalizedCenterY,
             float normalizedWidth,
@@ -214,8 +221,8 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 new Vector2(normalizedCenterX + dx, normalizedCenterY + dy)  // bottom-right
             };
 
-            Vector3? bestHit = null;
-            float bestDistance = float.MaxValue;
+            List<Vector3> hits = new();
+            List<float> distances = new();
             Vector3 cameraPosition = cameraPose.position;
 
             for (int i = 0; i < samplePoints.Length; i++)
@@ -231,15 +238,79 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 if (!hit.HasValue)
                     continue;
 
-                float d = Vector3.Distance(cameraPosition, hit.Value);
-                if (d < bestDistance)
+                hits.Add(hit.Value);
+                distances.Add(Vector3.Distance(cameraPosition, hit.Value));
+            }
+
+            if (hits.Count == 0)
+                return null;
+
+            if (hits.Count == 1)
+                return hits[0];
+
+            float medianDistance = ComputeMedian(distances);
+
+            float tolerance = Mathf.Max(
+                m_outlierRejectMeters,
+                medianDistance * m_outlierRejectRelative);
+
+            Vector3 sum = Vector3.zero;
+            int kept = 0;
+
+            for (int i = 0; i < hits.Count; i++)
+            {
+                if (Mathf.Abs(distances[i] - medianDistance) <= tolerance)
                 {
-                    bestDistance = d;
-                    bestHit = hit.Value;
+                    sum += hits[i];
+                    kept++;
                 }
             }
 
-            return bestHit;
+            if (kept == 0)
+            {
+                int medianIndex = FindClosestIndexToValue(distances, medianDistance);
+                return hits[medianIndex];
+            }
+
+            if (kept == 1)
+                return sum;
+
+            return sum / kept;
+        }
+
+        private static float ComputeMedian(List<float> values)
+        {
+            if (values == null || values.Count == 0)
+                return 0f;
+
+            List<float> sorted = new(values);
+            sorted.Sort();
+
+            int count = sorted.Count;
+            int mid = count / 2;
+
+            if ((count & 1) == 1)
+                return sorted[mid];
+
+            return 0.5f * (sorted[mid - 1] + sorted[mid]);
+        }
+
+        private static int FindClosestIndexToValue(List<float> values, float target)
+        {
+            int bestIndex = 0;
+            float bestError = Mathf.Abs(values[0] - target);
+
+            for (int i = 1; i < values.Count; i++)
+            {
+                float error = Mathf.Abs(values[i] - target);
+                if (error < bestError)
+                {
+                    bestError = error;
+                    bestIndex = i;
+                }
+            }
+
+            return bestIndex;
         }
 
         private string GetClassName(int labelId)

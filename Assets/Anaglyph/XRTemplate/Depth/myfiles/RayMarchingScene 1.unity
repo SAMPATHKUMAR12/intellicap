@@ -191,7 +191,7 @@ PrefabInstance:
       objectReference: {fileID: 1868723866}
     - target: {fileID: 7039785087756073083, guid: 3ce345c7c7474f44faaaabef6d1c952a, type: 3}
       propertyPath: m_innerSampleFactor
-      value: 0.3
+      value: 0.2
       objectReference: {fileID: 0}
     - target: {fileID: 7039785087756073083, guid: 3ce345c7c7474f44faaaabef6d1c952a, type: 3}
       propertyPath: m_environmentRaycast
@@ -2010,7 +2010,7 @@ PrefabInstance:
       objectReference: {fileID: 1432616428}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: m_maxSphereRadius
-      value: 1
+      value: 0.6
       objectReference: {fileID: 0}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: m_minSphereRadius
@@ -2038,11 +2038,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: m_mergeOverlappingSpheres
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: m_maxSpawnDistanceFromCamera
       value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
+      propertyPath: m_minSpawnDistanceFromCamera
+      value: 0.3
       objectReference: {fileID: 0}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: OnObjectsIdentified.m_PersistentCalls.m_Calls.Array.size

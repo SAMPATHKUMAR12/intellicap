@@ -213,7 +213,6 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 float existingRadius = info.Radius;
                 float d = Vector3.Distance(s.transform.position, newPosition);
 
-                // Only reject if almost same center -> same object duplicate
                 float duplicateThreshold = Mathf.Min(
                     m_spawnDistance,
                     Mathf.Min(existingRadius, newRadius) * 0.5f);
@@ -303,6 +302,15 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             }
 
             mergedRadius *= m_mergePadding;
+
+            // Option 2: if merged sphere would exceed max size, cancel merge
+            if (mergedRadius > m_maxSphereRadius)
+            {
+                Debug.Log($"[SphereMerge] Cancelled merge: mergedRadius={mergedRadius:F3}, max={m_maxSphereRadius:F3}");
+                SpawnSphere(newPos, newRadius);
+                return;
+            }
+
             mergedRadius = Mathf.Clamp(mergedRadius, m_minSphereRadius, m_maxSphereRadius);
 
             for (int i = 0; i < overlapping.Count; i++)
