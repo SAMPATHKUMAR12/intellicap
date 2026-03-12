@@ -8,14 +8,20 @@ public class CoverageSphereFaceHider : MonoBehaviour
     public float maxRayDistance = 10f;
     public float hitRadiusMeters = 0.02f;   // how wide the "gaze brush" is on the sphere surface
     public float facingDotThreshold = 0.5f; // triangle must face camera a bit (0..1)
-    public int maxFacesHidePerFrame = 1;   // performance cap
+    public int maxFacesHidePerFrame = 1;    // performance cap
+
+    [Header("Startup delay")]
+    public float startDelaySeconds = 0.8f;  // delay before hiding starts
+
+    [Header("Auto disappear")]
+    [Range(0f, 1f)]
+    public float disappearThreshold = 0.8f; // sphere disappears after 80% hidden
+    public bool destroyInsteadOfDisable = false;
 
     Mesh _mesh;
     Vector3[] _verts;
     int[] _tris;
     Color[] _colors;
-    
-
 
     Vector3[] _faceCenters;   // local space
     Vector3[] _faceNormals;   // local space
@@ -23,21 +29,12 @@ public class CoverageSphereFaceHider : MonoBehaviour
 
     Camera _cam;
 
-
-    [Header("Startup delay")]
-    public float startDelaySeconds = 0.8f; // delay before hiding starts
     private float _timeSinceSpawn = 0f;
     private bool _canHide = false;
 
-
-
-
-
-
-
-
-
-
+    private int _totalFaceCount = 0;
+    private int _hiddenFaceCount = 0;
+    private bool _hasDisappeared = false;
 
     void Awake()
     {
@@ -58,8 +55,8 @@ public class CoverageSphereFaceHider : MonoBehaviour
         var oldTris = _mesh.triangles;
 
         var newVerts = new Vector3[oldTris.Length];
-        var newTris  = new int[oldTris.Length];
-        var newUv2   = new Vector2[oldTris.Length]; //  barycentric coords in UV2
+        var newTris = new int[oldTris.Length];
+        var newUv2 = new Vector2[oldTris.Length]; // barycentric coords in UV2
 
         for (int i = 0; i < oldTris.Length; i += 3)
         {
@@ -73,33 +70,33 @@ public class CoverageSphereFaceHider : MonoBehaviour
             newTris[i + 1] = i + 1;
             newTris[i + 2] = i + 2;
 
-            //  barycentric values (store x,y; z is derived in shader)
+            // barycentric values (store x,y; z is derived in shader)
             newUv2[i + 0] = new Vector2(1f, 0f);
             newUv2[i + 1] = new Vector2(0f, 1f);
             newUv2[i + 2] = new Vector2(0f, 0f);
         }
 
         _mesh.Clear();
-        _mesh.vertices  = newVerts;
+        _mesh.vertices = newVerts;
         _mesh.triangles = newTris;
-        _mesh.uv2       = newUv2;  //  IMPORTANT LINE
+        _mesh.uv2 = newUv2;
         _mesh.RecalculateNormals();
         _mesh.RecalculateBounds();
 
-
         _verts = _mesh.vertices;
-        _tris  = _mesh.triangles;
+        _tris = _mesh.triangles;
 
-        // Init colors (start visible). You can set initial alpha here too.
+        // Init colors (start visible)
         _colors = new Color[_verts.Length];
         for (int i = 0; i < _colors.Length; i++)
             _colors[i] = new Color(0.25f, 0.55f, 1.0f, 0.25f);
 
-
-
         _mesh.colors = _colors;
 
         int faceCount = _tris.Length / 3;
+        _totalFaceCount = faceCount;
+        _hiddenFaceCount = 0;
+
         _faceCenters = new Vector3[faceCount];
         _faceNormals = new Vector3[faceCount];
         _hidden = new bool[faceCount];
@@ -121,6 +118,8 @@ public class CoverageSphereFaceHider : MonoBehaviour
 
     void Update()
     {
+        if (_hasDisappeared)
+            return;
 
         // ---- delay logic ----
         if (!_canHide)
@@ -129,17 +128,16 @@ public class CoverageSphereFaceHider : MonoBehaviour
             if (_timeSinceSpawn >= startDelaySeconds)
                 _canHide = true;
             else
-                return; // do nothing until delay passes
+                return;
         }
-        
+
         if (_cam == null) _cam = Camera.main;
         if (_cam == null || _mesh == null) return;
 
         // Ray from camera through center of view (gaze direction)
         Ray ray = new Ray(_cam.transform.position, _cam.transform.forward);
 
-        // Intersect ray with sphere surface approximately:
-        // We'll find the closest face center to the ray hit-point by ray-sphere intersection.
+        // Intersect ray with sphere surface approximately
         if (!RaySphere(ray, transform.position, GetApproxWorldRadius(), out Vector3 hitPoint))
             return;
 
@@ -169,17 +167,27 @@ public class CoverageSphereFaceHider : MonoBehaviour
 
             HideFace(f);
             hiddenThisFrame++;
+
+            if (_hiddenFaceCount >= Mathf.CeilToInt(_totalFaceCount * disappearThreshold))
+            {
+                DisappearSphere();
+                return;
+            }
+
             if (hiddenThisFrame >= maxFacesHidePerFrame)
                 break;
         }
 
         if (hiddenThisFrame > 0)
-            _mesh.colors = _colors; // push updates
+            _mesh.colors = _colors;
     }
 
     void HideFace(int f)
     {
+        if (_hidden[f]) return;
+
         _hidden[f] = true;
+        _hiddenFaceCount++;
 
         int i0 = _tris[f * 3 + 0];
         int i1 = _tris[f * 3 + 1];
@@ -191,10 +199,22 @@ public class CoverageSphereFaceHider : MonoBehaviour
         _colors[i2].a = 0f;
     }
 
+    void DisappearSphere()
+    {
+        if (_hasDisappeared)
+            return;
+
+        _hasDisappeared = true;
+
+        if (destroyInsteadOfDisable)
+            Destroy(gameObject);
+        else
+            gameObject.SetActive(false);
+    }
+
     float GetApproxWorldRadius()
     {
         // Sphere mesh is roughly unit radius in local space.
-        // If your local sphere radius differs, you can expose a field.
         return 0.5f * Mathf.Max(transform.lossyScale.x, transform.lossyScale.y, transform.lossyScale.z);
     }
 

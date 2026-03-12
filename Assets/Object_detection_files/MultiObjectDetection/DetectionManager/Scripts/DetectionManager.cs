@@ -21,7 +21,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         [SerializeField] private DetectionUiMenuManager m_uiMenuManager;
 
         [Header("Placement configuration")]
-        [SerializeField] private float m_spawnDistance = 0.25f;
+        [SerializeField] private float m_spawnDistance = 0.35f;
         [SerializeField] private AudioSource m_placeSound;
 
         [Header("Sentis inference refs")]
@@ -44,24 +44,46 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         [SerializeField] private ComplexityScoreDB m_scoreDB;
         [SerializeField] private GameObject m_spherePrefab;
         [SerializeField] private float m_complexityThreshold = 50f;
-        [SerializeField] private float m_defaultSphereRadius = 0.25f;
 
-        [Header("Sphere sizing from 2D bbox")]
-        [SerializeField] private float m_spherePadding = 1.25f;
-        [SerializeField] private float m_minSphereRadius = 0.10f;
-        [SerializeField] private float m_maxSphereRadius = 2.00f;
+        [Header("Radius estimation")]
+        [SerializeField] private float m_defaultSphereRadius = 0.25f;
+        [SerializeField] private float m_radiusPadding = 1.15f;
+        [SerializeField] private float m_minSphereRadius = 0.08f;
+        [SerializeField] private float m_maxSphereRadius = 1.5f;
 
         [Header("Auto spawning")]
         [SerializeField] private bool m_autoSpawnEnabled = true;
-        [SerializeField] private float m_autoSpawnInterval = 0.5f;
+        [SerializeField] private float m_autoSpawnInterval = 1.0f;
         private float m_autoSpawnTimer = 0f;
 
-        [Header("Sphere Merging")]
-        [SerializeField] private bool m_mergeOverlaps = true;
-        [SerializeField] private float m_mergePadding = 1.0f;
-        [SerializeField] private float m_overlapEpsilon = 0.01f;
+        [Header("Spawn confirmation")]
+        [SerializeField] private int m_requiredConfirmations = 2;
+        [SerializeField] private float m_candidateMatchDistance = 0.25f;
+        [SerializeField] private float m_candidateLifetime = 0.8f;
+
+        [Header("Startup stabilization")]
+        [SerializeField] private float m_spawnWarmupSeconds = 1.5f;
+        [SerializeField] private int m_requiredDetectionCyclesBeforeSpawn = 2;
+
+        [Header("Sphere merging")]
+        [SerializeField] private bool m_mergeOverlappingSpheres = true;
+        [SerializeField] private float m_mergeOverlapFactor = 1.0f;
+        [SerializeField] private float m_mergePadding = 1.05f;
+
+        private float m_spawnEnableTime = 0f;
+        private int m_validDetectionCycles = 0;
 
         private readonly List<GameObject> m_spawnedSpheres = new();
+        private readonly List<PendingCandidate> m_pendingCandidates = new();
+
+        private class PendingCandidate
+        {
+            public string ClassName;
+            public Vector3 Position;
+            public float EstimatedRadius;
+            public int Confirmations;
+            public float LastSeenTime;
+        }
 
         #region Unity Functions
 
@@ -95,6 +117,9 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             m_isSentisReady = true;
             m_isPaused = false;
             m_isStarted = true;
+
+            m_spawnEnableTime = Time.time + m_spawnWarmupSeconds;
+            m_validDetectionCycles = 0;
         }
 
         private void Update()
@@ -105,6 +130,8 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 {
                     m_isStarted = true;
                     m_isPaused = false;
+                    m_spawnEnableTime = Time.time + m_spawnWarmupSeconds;
+                    m_validDetectionCycles = 0;
                 }
             }
             else
@@ -124,6 +151,8 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                     m_delayPauseBackTime = 0f;
             }
 
+            CleanupExpiredCandidates();
+
             if (m_isPaused || m_cameraAccess == null || !m_cameraAccess.IsPlaying)
             {
                 if (m_isPaused)
@@ -140,27 +169,39 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
         #region Sphere Helpers
 
-        private static void MidpointEnclosingSphere(Vector3 c1, float r1, Vector3 c2, float r2, out Vector3 c, out float r)
-        {
-            c = (c1 + c2) * 0.5f;
-            float need1 = Vector3.Distance(c, c1) + r1;
-            float need2 = Vector3.Distance(c, c2) + r2;
-            r = Mathf.Max(need1, need2);
-        }
-
-        private static bool ContainsSphere(Vector3 cBig, float rBig, Vector3 cSmall, float rSmall, float eps = 0.001f)
-        {
-            float d = Vector3.Distance(cBig, cSmall);
-            return (d + rSmall) <= (rBig - eps);
-        }
-
-        private static bool Overlaps(Vector3 c1, float r1, Vector3 c2, float r2, float eps)
+        private static bool SpheresOverlap(Vector3 c1, float r1, Vector3 c2, float r2, float factor = 1.0f)
         {
             float d = Vector3.Distance(c1, c2);
-            return d < (r1 + r2 - eps);
+            return d < (r1 + r2) * factor;
         }
 
-        private void SpawnOrMergeSphere(Vector3 newCenter, float newRadius)
+        private static void EncloseTwoSpheres(Vector3 c1, float r1, Vector3 c2, float r2, out Vector3 c, out float r)
+        {
+            float d = Vector3.Distance(c1, c2);
+
+            // One sphere completely contains the other
+            if (d <= Mathf.Abs(r2 - r1))
+            {
+                if (r2 >= r1)
+                {
+                    c = c2;
+                    r = r2;
+                }
+                else
+                {
+                    c = c1;
+                    r = r1;
+                }
+                return;
+            }
+
+            // General case
+            r = (d + r1 + r2) * 0.5f;
+            Vector3 dir = d > 0.0001f ? (c2 - c1) / d : Vector3.right;
+            c = c1 + dir * (r - r1);
+        }
+
+        private bool IsDuplicateSphere(Vector3 newPosition, float newRadius)
         {
             foreach (var s in m_spawnedSpheres)
             {
@@ -169,87 +210,19 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 var info = s.GetComponent<CoverageSphereInfo>();
                 if (info == null) continue;
 
-                if (ContainsSphere(s.transform.position, info.Radius, newCenter, newRadius, 0.01f))
-                    return;
+                float existingRadius = info.Radius;
+                float d = Vector3.Distance(s.transform.position, newPosition);
+
+                // Only reject if almost same center -> same object duplicate
+                float duplicateThreshold = Mathf.Min(
+                    m_spawnDistance,
+                    Mathf.Min(existingRadius, newRadius) * 0.5f);
+
+                if (d < duplicateThreshold)
+                    return true;
             }
 
-            int mergeIndex = -1;
-            for (int i = 0; i < m_spawnedSpheres.Count; i++)
-            {
-                var s = m_spawnedSpheres[i];
-                if (!s) continue;
-
-                var info = s.GetComponent<CoverageSphereInfo>();
-                if (info == null) continue;
-
-                if (Overlaps(s.transform.position, info.Radius, newCenter, newRadius, m_overlapEpsilon))
-                {
-                    mergeIndex = i;
-                    break;
-                }
-            }
-
-            if (mergeIndex == -1)
-            {
-                SpawnSphere(newCenter, newRadius);
-                return;
-            }
-
-            var baseSphere = m_spawnedSpheres[mergeIndex];
-            if (baseSphere == null)
-            {
-                SpawnSphere(newCenter, newRadius);
-                return;
-            }
-
-            var baseInfo = baseSphere.GetComponent<CoverageSphereInfo>();
-            if (baseInfo == null)
-            {
-                baseInfo = baseSphere.AddComponent<CoverageSphereInfo>();
-                baseInfo.Radius = newRadius;
-            }
-
-            Vector3 mergedCenter = baseSphere.transform.position;
-            float mergedRadius = baseInfo.Radius;
-
-            MidpointEnclosingSphere(mergedCenter, mergedRadius, newCenter, newRadius, out mergedCenter, out mergedRadius);
-
-            for (int i = m_spawnedSpheres.Count - 1; i >= 0; i--)
-            {
-                if (i == mergeIndex) continue;
-
-                var s = m_spawnedSpheres[i];
-                if (!s)
-                {
-                    m_spawnedSpheres.RemoveAt(i);
-                    continue;
-                }
-
-                var info = s.GetComponent<CoverageSphereInfo>();
-                if (info == null) continue;
-
-                if (Overlaps(mergedCenter, mergedRadius, s.transform.position, info.Radius, m_overlapEpsilon))
-                {
-                    MidpointEnclosingSphere(
-                        mergedCenter,
-                        mergedRadius,
-                        s.transform.position,
-                        info.Radius,
-                        out mergedCenter,
-                        out mergedRadius);
-
-                    m_spawnedSpheres.RemoveAt(i);
-                    m_spawnedEntities.Remove(s);
-                    Destroy(s);
-                }
-            }
-
-            mergedRadius *= m_mergePadding;
-            mergedRadius = Mathf.Min(mergedRadius, m_maxSphereRadius);
-
-            baseSphere.transform.SetPositionAndRotation(mergedCenter, Quaternion.identity);
-            baseSphere.transform.localScale = Vector3.one * mergedRadius;
-            baseInfo.Radius = mergedRadius;
+            return false;
         }
 
         private GameObject SpawnSphere(Vector3 pos, float radius)
@@ -270,7 +243,172 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             m_spawnedSpheres.Add(go);
             m_spawnedEntities.Add(go);
 
+            Debug.Log($"[DetectionManager] Spawned sphere at {pos} radius={radius:F3}");
             return go;
+        }
+
+        private void SpawnOrMergeSphere(Vector3 newPos, float newRadius)
+        {
+            if (!m_mergeOverlappingSpheres)
+            {
+                SpawnSphere(newPos, newRadius);
+                return;
+            }
+
+            List<GameObject> overlapping = new();
+
+            for (int i = 0; i < m_spawnedSpheres.Count; i++)
+            {
+                var sphere = m_spawnedSpheres[i];
+                if (!sphere) continue;
+
+                var info = sphere.GetComponent<CoverageSphereInfo>();
+                if (info == null) continue;
+
+                if (SpheresOverlap(
+                        sphere.transform.position,
+                        info.Radius,
+                        newPos,
+                        newRadius,
+                        m_mergeOverlapFactor))
+                {
+                    overlapping.Add(sphere);
+                }
+            }
+
+            if (overlapping.Count == 0)
+            {
+                SpawnSphere(newPos, newRadius);
+                return;
+            }
+
+            Vector3 mergedCenter = newPos;
+            float mergedRadius = newRadius;
+
+            for (int i = 0; i < overlapping.Count; i++)
+            {
+                var sphere = overlapping[i];
+                if (!sphere) continue;
+
+                var info = sphere.GetComponent<CoverageSphereInfo>();
+                if (info == null) continue;
+
+                EncloseTwoSpheres(
+                    mergedCenter,
+                    mergedRadius,
+                    sphere.transform.position,
+                    info.Radius,
+                    out mergedCenter,
+                    out mergedRadius);
+            }
+
+            mergedRadius *= m_mergePadding;
+            mergedRadius = Mathf.Clamp(mergedRadius, m_minSphereRadius, m_maxSphereRadius);
+
+            for (int i = 0; i < overlapping.Count; i++)
+            {
+                var sphere = overlapping[i];
+                if (sphere == null) continue;
+
+                m_spawnedSpheres.Remove(sphere);
+                m_spawnedEntities.Remove(sphere);
+                Destroy(sphere);
+            }
+
+            SpawnSphere(mergedCenter, mergedRadius);
+        }
+
+        private float EstimateSphereRadiusFromDetection(SentisInferenceUiManager.BoundingBox box, Vector3 worldPos)
+        {
+            var cam = Camera.main;
+            if (cam == null || m_uiInference == null)
+                return m_defaultSphereRadius;
+
+            float depth = Vector3.Distance(cam.transform.position, worldPos);
+            depth = Mathf.Max(depth, 0.05f);
+
+            float bboxUiPx = Mathf.Max(box.Width, box.Height);
+
+            Vector2 displayUiSize = m_uiInference.GetDisplaySize();
+            float uiToScreen = cam.pixelHeight / Mathf.Max(1f, displayUiSize.y);
+            float bboxScreenPx = bboxUiPx * uiToScreen;
+
+            float fovYRad = cam.fieldOfView * Mathf.Deg2Rad;
+            float focalPx = (0.5f * cam.pixelHeight) / Mathf.Tan(0.5f * fovYRad);
+
+            float radiusPx = 0.5f * bboxScreenPx;
+            float radiusMeters = (radiusPx * depth) / focalPx;
+
+            radiusMeters *= m_radiusPadding;
+            return Mathf.Clamp(radiusMeters, m_minSphereRadius, m_maxSphereRadius);
+        }
+
+        #endregion
+
+        #region Candidate Confirmation
+
+        private void CleanupExpiredCandidates()
+        {
+            for (int i = m_pendingCandidates.Count - 1; i >= 0; i--)
+            {
+                if (Time.time - m_pendingCandidates[i].LastSeenTime > m_candidateLifetime)
+                    m_pendingCandidates.RemoveAt(i);
+            }
+        }
+
+        private bool ConfirmAndMaybeSpawn(string className, Vector3 position, SentisInferenceUiManager.BoundingBox box)
+        {
+            float observedRadius = EstimateSphereRadiusFromDetection(box, position);
+
+            PendingCandidate best = null;
+            float bestDistance = float.MaxValue;
+
+            for (int i = 0; i < m_pendingCandidates.Count; i++)
+            {
+                var candidate = m_pendingCandidates[i];
+                if (candidate.ClassName != className)
+                    continue;
+
+                float d = Vector3.Distance(candidate.Position, position);
+                if (d < m_candidateMatchDistance && d < bestDistance)
+                {
+                    bestDistance = d;
+                    best = candidate;
+                }
+            }
+
+            if (best == null)
+            {
+                m_pendingCandidates.Add(new PendingCandidate
+                {
+                    ClassName = className,
+                    Position = position,
+                    EstimatedRadius = observedRadius,
+                    Confirmations = 1,
+                    LastSeenTime = Time.time
+                });
+                return false;
+            }
+
+            best.Position = Vector3.Lerp(best.Position, position, 0.4f);
+            best.EstimatedRadius = Mathf.Lerp(best.EstimatedRadius, observedRadius, 0.4f);
+            best.Confirmations++;
+            best.LastSeenTime = Time.time;
+
+            if (best.Confirmations < m_requiredConfirmations)
+                return false;
+
+            float finalRadius = best.EstimatedRadius;
+
+            if (IsDuplicateSphere(best.Position, finalRadius))
+            {
+                m_pendingCandidates.Remove(best);
+                return false;
+            }
+
+            SpawnOrMergeSphere(best.Position, finalRadius);
+            m_pendingCandidates.Remove(best);
+            return true;
         }
 
         #endregion
@@ -279,14 +417,17 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
         private void CleanSpawnedObjectsCallback()
         {
-            foreach (var e in m_spawnedEntities)
+            foreach (var entity in m_spawnedEntities)
             {
-                if (e != null)
-                    Destroy(e, 0.1f);
+                if (entity != null)
+                    Destroy(entity, 0.1f);
             }
 
             m_spawnedEntities.Clear();
             m_spawnedSpheres.Clear();
+            m_pendingCandidates.Clear();
+            m_validDetectionCycles = 0;
+            m_spawnEnableTime = Time.time + m_spawnWarmupSeconds;
             OnObjectsIdentified?.Invoke(-1);
         }
 
@@ -295,10 +436,28 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             if (m_uiInference == null || m_uiInference.BoxDrawn == null)
                 return;
 
+            if (Time.time < m_spawnEnableTime)
+                return;
+
+            int validBoxesThisCycle = 0;
+            foreach (var box in m_uiInference.BoxDrawn)
+            {
+                if (box.WorldPos.HasValue)
+                    validBoxesThisCycle++;
+            }
+
+            if (validBoxesThisCycle > 0)
+                m_validDetectionCycles++;
+            else
+                m_validDetectionCycles = 0;
+
+            if (m_validDetectionCycles < m_requiredDetectionCyclesBeforeSpawn)
+                return;
+
             int count = 0;
             foreach (var box in m_uiInference.BoxDrawn)
             {
-                if (PlaceDetectionSphere(box))
+                if (ProcessDetection(box))
                     count++;
             }
 
@@ -308,7 +467,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             OnObjectsIdentified?.Invoke(count);
         }
 
-        private bool PlaceDetectionSphere(SentisInferenceUiManager.BoundingBox box)
+        private bool ProcessDetection(SentisInferenceUiManager.BoundingBox box)
         {
             if (!box.WorldPos.HasValue)
                 return false;
@@ -329,36 +488,18 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
             string className = box.ClassName;
 
-            foreach (var e in m_spawnedEntities)
-            {
-                if (!e) continue;
-
-                if (Vector3.Distance(e.transform.position, position) < m_spawnDistance)
-                    return false;
-            }
-
             bool spawnSphere = false;
 
             if (m_scoreDB != null && m_scoreDB.IsReady && m_scoreDB.TryGetScore(className, out float score))
             {
                 spawnSphere = score >= m_complexityThreshold;
-                Debug.Log($"[Spawn] class={className} score={score:F1} spawnSphere={spawnSphere}");
+                Debug.Log($"[SpawnCandidate] class={className} score={score:F1} allowed={spawnSphere}");
             }
 
             if (!spawnSphere || m_spherePrefab == null)
                 return false;
 
-            float radius = m_defaultSphereRadius;
-
-            if (cam != null && m_uiInference != null)
-                radius = EstimateSphereRadiusFromUiBBox(cam, m_uiInference, box, position);
-
-            if (m_mergeOverlaps)
-                SpawnOrMergeSphere(position, radius);
-            else
-                SpawnSphere(position, radius);
-
-            return true;
+            return ConfirmAndMaybeSpawn(className, position, box);
         }
 
         #endregion
@@ -368,36 +509,6 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         public void OnPause(bool pause)
         {
             m_isPaused = pause;
-        }
-
-        #endregion
-
-        #region Sphere Radius Estimation
-
-        private float EstimateSphereRadiusFromUiBBox(
-            Camera cam,
-            SentisInferenceUiManager ui,
-            SentisInferenceUiManager.BoundingBox box,
-            Vector3 worldCenter)
-        {
-            float depth = Vector3.Distance(cam.transform.position, worldCenter);
-            depth = Mathf.Max(depth, 0.05f);
-
-            float bboxUiPx = Mathf.Max(box.Width, box.Height);
-
-            Vector2 displayUiSize = ui.GetDisplaySize();
-            float uiToScreen = cam.pixelHeight / Mathf.Max(1f, displayUiSize.y);
-            float bboxScreenPx = bboxUiPx * uiToScreen;
-
-            float fovYRad = cam.fieldOfView * Mathf.Deg2Rad;
-            float focalPx = (0.5f * cam.pixelHeight) / Mathf.Tan(0.5f * fovYRad);
-
-            float radiusPx = 0.5f * bboxScreenPx;
-            float r = (radiusPx * depth) / focalPx;
-
-            r *= m_spherePadding;
-            r = Mathf.Clamp(r, m_minSphereRadius, m_maxSphereRadius);
-            return r;
         }
 
         #endregion

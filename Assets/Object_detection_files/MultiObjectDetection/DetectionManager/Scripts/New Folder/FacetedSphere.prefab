@@ -2312,3 +2312,5 @@ MonoBehaviour:
   facingDotThreshold: 0.5
   maxFacesHidePerFrame: 10
   startDelaySeconds: 0.5
+  disappearThreshold: 0.5
+  destroyInsteadOfDisable: 0

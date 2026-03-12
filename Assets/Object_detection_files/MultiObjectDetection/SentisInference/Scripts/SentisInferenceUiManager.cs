@@ -17,6 +17,10 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         [SerializeField] private EnvironmentRayCastSampleManager m_environmentRaycast;
         [SerializeField] private PassthroughCameraAccess m_cameraAccess;
 
+        [Header("Multi-ray world position sampling")]
+        [SerializeField] private bool m_useMultiRaySampling = true;
+        [SerializeField] private float m_innerSampleFactor = 0.25f;
+
         [Header("UI display references")]
         [SerializeField] private SentisObjectDetectedUiManager m_detectionCanvas;
         [SerializeField] private RawImage m_displayImage;
@@ -105,7 +109,6 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             if (m_detectionCanvas != null)
                 m_detectionCanvas.UpdatePosition();
 
-            // Clear old box data and hide any previously drawn UI boxes
             ClearAnnotations();
 
             if (m_displayImage == null)
@@ -146,35 +149,97 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             {
                 float normalizedCenterX = output[n, 0] / imageWidth;
                 float normalizedCenterY = output[n, 1] / imageHeight;
+
+                float normalizedWidth = output[n, 2] / imageWidth;
+                float normalizedHeight = output[n, 3] / imageHeight;
+
                 float centerX = displayWidth * (normalizedCenterX - 0.5f);
                 float centerY = displayHeight * (normalizedCenterY - 0.5f);
 
-                string classname = GetClassName(labelIDs[n]);
+                string className = GetClassName(labelIDs[n]);
 
-                var ray = m_cameraAccess.ViewportPointToRay(
-                    new Vector2(normalizedCenterX, 1.0f - normalizedCenterY),
-                    cameraPose);
-
-                var worldPos = m_environmentRaycast.Raycast(ray);
+                Vector3? worldPos = m_useMultiRaySampling
+                    ? SampleWorldPosFromBBox9(normalizedCenterX, normalizedCenterY, normalizedWidth, normalizedHeight, cameraPose)
+                    : SampleSingleCenterWorldPos(normalizedCenterX, normalizedCenterY, cameraPose);
 
                 var box = new BoundingBox
                 {
                     CenterX = centerX,
                     CenterY = centerY,
-                    ClassName = classname,
+                    ClassName = className,
                     Width = output[n, 2] * (displayWidth / imageWidth),
                     Height = output[n, 3] * (displayHeight / imageHeight),
-                    Label = $"Id: {n} Class: {classname} Center (px): {(int)centerX},{(int)centerY} Center (%): {normalizedCenterX:0.00},{normalizedCenterY:0.00}",
+                    Label = $"Id: {n} Class: {className} Center (px): {(int)centerX},{(int)centerY} Center (%): {normalizedCenterX:0.00},{normalizedCenterY:0.00}",
                     WorldPos = worldPos,
                 };
 
-                // Keep detection data for sphere spawning
                 BoxDrawn.Add(box);
 
-                // IMPORTANT:
-                // Do NOT draw 2D square boxes or labels anymore.
+                // No visible 2D boxes
                 // DrawBox(box, n);
             }
+        }
+
+        private Vector3? SampleSingleCenterWorldPos(float normalizedCenterX, float normalizedCenterY, Pose cameraPose)
+        {
+            var ray = m_cameraAccess.ViewportPointToRay(
+                new Vector2(
+                    Mathf.Clamp01(normalizedCenterX),
+                    Mathf.Clamp01(1.0f - normalizedCenterY)),
+                cameraPose);
+
+            return m_environmentRaycast.Raycast(ray);
+        }
+
+        private Vector3? SampleWorldPosFromBBox9(
+            float normalizedCenterX,
+            float normalizedCenterY,
+            float normalizedWidth,
+            float normalizedHeight,
+            Pose cameraPose)
+        {
+            float dx = normalizedWidth * m_innerSampleFactor;
+            float dy = normalizedHeight * m_innerSampleFactor;
+
+            Vector2[] samplePoints =
+            {
+                new Vector2(normalizedCenterX, normalizedCenterY),           // center
+                new Vector2(normalizedCenterX - dx, normalizedCenterY),      // left
+                new Vector2(normalizedCenterX + dx, normalizedCenterY),      // right
+                new Vector2(normalizedCenterX, normalizedCenterY - dy),      // top
+                new Vector2(normalizedCenterX, normalizedCenterY + dy),      // bottom
+                new Vector2(normalizedCenterX - dx, normalizedCenterY - dy), // top-left
+                new Vector2(normalizedCenterX + dx, normalizedCenterY - dy), // top-right
+                new Vector2(normalizedCenterX - dx, normalizedCenterY + dy), // bottom-left
+                new Vector2(normalizedCenterX + dx, normalizedCenterY + dy)  // bottom-right
+            };
+
+            Vector3? bestHit = null;
+            float bestDistance = float.MaxValue;
+            Vector3 cameraPosition = cameraPose.position;
+
+            for (int i = 0; i < samplePoints.Length; i++)
+            {
+                float vx = Mathf.Clamp01(samplePoints[i].x);
+                float vy = Mathf.Clamp01(samplePoints[i].y);
+
+                var ray = m_cameraAccess.ViewportPointToRay(
+                    new Vector2(vx, 1.0f - vy),
+                    cameraPose);
+
+                Vector3? hit = m_environmentRaycast.Raycast(ray);
+                if (!hit.HasValue)
+                    continue;
+
+                float d = Vector3.Distance(cameraPosition, hit.Value);
+                if (d < bestDistance)
+                {
+                    bestDistance = d;
+                    bestHit = hit.Value;
+                }
+            }
+
+            return bestHit;
         }
 
         private string GetClassName(int labelId)
@@ -199,13 +264,10 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             BoxDrawn.Clear();
         }
 
-        // Kept only for compatibility in case something else still references it.
-        // Not used anymore because box drawing is disabled.
         private void DrawBox(BoundingBox box, int id)
         {
         }
 
-        // Kept only for compatibility. Not used anymore.
         private GameObject CreateNewBox(Color color)
         {
             if (m_displayLocation == null)

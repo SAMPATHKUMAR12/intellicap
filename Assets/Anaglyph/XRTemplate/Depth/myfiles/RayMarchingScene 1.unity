@@ -190,6 +190,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1868723866}
     - target: {fileID: 7039785087756073083, guid: 3ce345c7c7474f44faaaabef6d1c952a, type: 3}
+      propertyPath: m_innerSampleFactor
+      value: 0.3
+      objectReference: {fileID: 0}
+    - target: {fileID: 7039785087756073083, guid: 3ce345c7c7474f44faaaabef6d1c952a, type: 3}
       propertyPath: m_environmentRaycast
       value: 
       objectReference: {fileID: 1673057357}
@@ -994,18 +998,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f59e78727ea5f784b969ca46aefa294d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  rayCamera: {fileID: 785630818}
-  maskWidth: 64
-  maskHeight: 64
-  maxDistance: 7
-  maskRT: {fileID: 0}
-  debugMaterial: {fileID: 2100000, guid: 8e3918a2ac68efb469973061bb199aae, type: 2}
-  updatesPerSecond: 5
-  maskConsumerMaterials:
-  - {fileID: 2100000, guid: 8e3918a2ac68efb469973061bb199aae, type: 2}
-  maskPropertyName: _EnvBinaryMask
-  _isUpdating: 0
-  _nextUpdateTime: 0
 --- !u!114 &785630821
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1018,16 +1010,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 21f393ff74b5eac428956a599de6e2ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  rayCamera: {fileID: 785630818}
-  texWidth: 256
-  texHeight: 144
-  maxDistance: 7
-  normalRT: {fileID: 0}
-  debugMaterial: {fileID: 2100000, guid: 04212b0d4a678cf4cb34f7906a35c401, type: 2}
-  updatesPerSecond: 5
-  confidenceThreshold: 0.38
-  _isUpdating: 0
-  _nextUpdateTime: 0
 --- !u!114 &785630825
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2012,11 +1994,15 @@ PrefabInstance:
       objectReference: {fileID: 6005255946720599227, guid: 1112facba492cf148a6de451f5e68a8a, type: 3}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: m_mergeOverlaps
-      value: 1
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
+      propertyPath: m_radiusPadding
+      value: 1.05
       objectReference: {fileID: 0}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: m_spawnDistance
-      value: 0.1
+      value: 0.2
       objectReference: {fileID: 0}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: m_uiMenuManager
@@ -2024,6 +2010,14 @@ PrefabInstance:
       objectReference: {fileID: 1432616428}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: m_maxSphereRadius
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
+      propertyPath: m_minSphereRadius
+      value: 0.04
+      objectReference: {fileID: 0}
+    - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
+      propertyPath: m_autoSpawnInterval
       value: 0.5
       objectReference: {fileID: 0}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
@@ -2033,6 +2027,18 @@ PrefabInstance:
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: m_complexityThreshold
       value: 35
+      objectReference: {fileID: 0}
+    - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
+      propertyPath: m_defaultSphereRadius
+      value: 0.3
+      objectReference: {fileID: 0}
+    - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
+      propertyPath: m_candidateMatchDistance
+      value: 0.2
+      objectReference: {fileID: 0}
+    - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
+      propertyPath: m_mergeOverlappingSpheres
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7947523624053527798, guid: bd7855fa76d84394fa1a26ca30132a95, type: 3}
       propertyPath: m_maxSpawnDistanceFromCamera
